@@ -153,7 +153,7 @@ delete_object_record_from_object_db(object_db_t *object_db,
 
     /* find the previous node of object_rec */
     object_db_rec_t *prev = head;
-    head = head->next;
+    head = head->next; /* exclude head */
     while(head){
         if(head != object_rec){
             prev = head;
@@ -189,4 +189,48 @@ void xfree(object_db_t *object_db, void *ptr){
     object_rec->ptr = NULL;
     /*Delete object record from object db*/
     delete_object_record_from_object_db(object_db, object_rec);
+}
+
+
+/*APIs to register root objects*/
+void gcol_register_global_object_as_root(object_db_t *object_db, 
+    void *objptr, 
+    char *struct_name, 
+    unsigned int units)
+{
+    struct_db_rec_t *struct_rec = struct_db_lookup(object_db->struct_db, struct_name);
+    assert(struct_rec);
+
+    /* create a new object record and add to obejct database */
+    add_object_to_object_db(object_db, objptr, units, struct_rec, GCOL_TRUE);
+}
+
+void gcol_set_dynamic_object_as_root(object_db_t *object_db, void *obj_ptr)
+{
+    object_db_rec_t *obj_rec = object_db_lookup(object_db, obj_ptr);
+    assert(obj_rec);
+
+    obj_rec->is_root = GCOL_TRUE;
+}
+
+void gcol_set_object_as_global_root(object_db_t *object_db, void *obj_ptr)
+{
+
+}
+
+
+/*APIs for Garbage Collector Algorithm*/
+void run_gcol_algorithm(object_db_t *object_db)
+{
+
+}
+
+void report_leaked_objects(object_db_t *object_db)
+{
+
+}
+
+void  gcol_init_primitive_data_types_support(struct_db_t *struct_db)
+{
+    
 }

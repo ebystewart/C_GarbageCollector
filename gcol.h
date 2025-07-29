@@ -110,4 +110,21 @@ void print_object_db(object_db_t *object_db);
 
 void *xcalloc(object_db_t *object_db, char *struct_name, int units);
 
+void xfree(object_db_t *object_db, void *ptr);
+
+/*APIs to register root objects*/
+void gcol_register_global_object_as_root(object_db_t *object_db, 
+    void *objptr, 
+    char *struct_name, 
+    unsigned int units);
+
+/*APIs for Garbage Collector Algorithm*/
+void run_gcol_algorithm(object_db_t *object_db);
+
+void report_leaked_objects(object_db_t *object_db);
+
+void gcol_set_dynamic_object_as_root(object_db_t *object_db, void *obj_ptr);
+
+void gcol_init_primitive_data_types_support(struct_db_t *struct_db);
+
 #endif
