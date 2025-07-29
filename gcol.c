@@ -218,11 +218,119 @@ void gcol_set_object_as_global_root(object_db_t *object_db, void *obj_ptr)
 
 }
 
+static void init_gcol_algorithm(object_db_t *object_db){
+
+    /* set the "is_visited" flag of all the obj records to false */
+    object_db_rec_t *obj_rec = object_db->head;
+    for(; obj_rec; obj_rec = obj_rec->next){
+        obj_rec->is_visited = GCOL_FALSE;
+    }
+}
+
+static object_db_rec_t *get_next_root_object(object_db_t *object_db, object_db_rec_t *start_obj_rec)
+{
+    object_db_rec_t *start = start_obj_rec ? start_obj_rec : object_db->head;
+    object_db_rec_t *curr = start;
+    for(; curr; curr = curr->next){
+        if(curr->is_root == GCOL_TRUE)
+            return curr;
+    }
+    return NULL;
+}
+
+static void gcol_explore_objects_recursively(object_db_t *object_db, object_db_rec_t *parent_obj_rec){
+
+    unsigned int i = 0;
+    unsigned int n_fields;
+    char *parent_obj_ptr = NULL;
+    char *child_obj_offset = NULL;
+    void *child_object_address = NULL;
+    field_info_t *field_info = NULL;
+    struct_db_rec_t *parent_struct_rec = NULL;
+    object_db_rec_t *child_object_rec = NULL;
+
+    parent_struct_rec = parent_obj_rec->struct_rec;
+    assert(parent_obj_rec->is_visited);
+
+    if(parent_struct_rec->n_fields == 0)
+        return;
+    
+    for(i = 0; i < parent_obj_rec->units; i++){
+
+        parent_obj_ptr = (char *)parent_obj_rec->ptr + (i * parent_struct_rec->ds_size);
+
+        for(n_fields = 0; n_fields < parent_struct_rec->n_fields; n_fields++){
+
+            field_info = &parent_struct_rec->fields[n_fields];
+
+            /* we consider only pointers to other objects */
+            switch(field_info->dtype){
+
+                case UINT8:
+                case UINT32:
+                case INT32:
+                case CHAR:
+                case FLOAT:
+                case DOUBLE:
+                case OBJ_STRUCT:
+                    break;
+                case VOID_PTR:
+                case OBJ_PTR:
+                default:
+                    ;          
+                
+                /*child_obj_offset is the memory location inside parent object
+                 * where address of next level object is stored*/
+                child_obj_offset = parent_obj_ptr + field_info->offset;
+                memcpy(&child_object_address, child_obj_offset, sizeof(void *));
+
+                /*child_object_address now stores the address of the next object in the
+                 * graph. It could be NULL, Handle that as well*/
+                if(!child_object_address) continue;
+
+                child_object_rec = object_db_lookup(object_db, child_object_address);
+
+                assert(child_object_rec);
+                /* Since we are able to reach this child object "child_object_rec" 
+                 * from parent object "parent_obj_ptr", mark this
+                 * child object as visited and explore its children recirsively. 
+                 * If this child object is already visited, then do nothing - avoid infinite loops*/
+                if(!child_object_rec->is_visited){
+                    child_object_rec->is_visited = GCOL_TRUE;
+                    if(field_info->dtype != VOID_PTR) /*Explore next object only when it is not a VOID_PTR*/
+                        gcol_explore_objects_recursively(object_db, child_object_rec);
+                }
+                else{
+                    continue; /*Do nothing, explore next child object*/
+                }
+            }
+        }
+    }
+}
 
 /*APIs for Garbage Collector Algorithm*/
 void run_gcol_algorithm(object_db_t *object_db)
 {
+    /* initialize by clearing all the "is_visited" flags */
+    init_gcol_algorithm(object_db);
 
+    /* get the first root object from the object database */
+    object_db_rec_t *root_obj = get_next_root_object(object_db, NULL);
+    while(root_obj){
+
+        if(root_obj->is_visited){
+            /* This means all the reachable from this root node are already expolred */
+            root_obj = get_next_root_object(object_db, root_obj->next);
+            continue;
+        }
+        /* root objects are always reachable as object rec holds direct reference to it */
+        root_obj->is_visited = GCOL_TRUE;
+
+        /* explore all reachable objects from this root_obj recursively */
+        gcol_explore_objects_recursively(object_db, root_obj);
+
+        root_obj = get_next_root_object(object_db, root_obj->next);
+    }
 }
 
 void report_leaked_objects(object_db_t *object_db)
