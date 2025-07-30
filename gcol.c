@@ -229,11 +229,11 @@ static void init_gcol_algorithm(object_db_t *object_db){
 
 static object_db_rec_t *get_next_root_object(object_db_t *object_db, object_db_rec_t *start_obj_rec)
 {
-    object_db_rec_t *start = start_obj_rec ? start_obj_rec : object_db->head;
-    object_db_rec_t *curr = start;
-    for(; curr; curr = curr->next){
-        if(curr->is_root == GCOL_TRUE)
-            return curr;
+    object_db_rec_t *start = start_obj_rec ? start_obj_rec->next : object_db->head;
+    while(start){
+        if(start->is_root == GCOL_TRUE)
+            return start;
+        start = start->next;
     }
     return NULL;
 }
@@ -252,6 +252,7 @@ static void gcol_explore_objects_recursively(object_db_t *object_db, object_db_r
     parent_struct_rec = parent_obj_rec->struct_rec;
     assert(parent_obj_rec->is_visited);
 
+    /* This check is meant for primitive struct objects */
     if(parent_struct_rec->n_fields == 0)
         return;
     
@@ -320,7 +321,7 @@ void run_gcol_algorithm(object_db_t *object_db)
 
         if(root_obj->is_visited){
             /* This means all the reachable from this root node are already expolred */
-            root_obj = get_next_root_object(object_db, root_obj->next);
+            root_obj = get_next_root_object(object_db, root_obj);
             continue;
         }
         /* root objects are always reachable as object rec holds direct reference to it */
@@ -329,16 +330,76 @@ void run_gcol_algorithm(object_db_t *object_db)
         /* explore all reachable objects from this root_obj recursively */
         gcol_explore_objects_recursively(object_db, root_obj);
 
-        root_obj = get_next_root_object(object_db, root_obj->next);
+        root_obj = get_next_root_object(object_db, root_obj);
     }
 }
 
-void report_leaked_objects(object_db_t *object_db)
-{
+static void gcol_dump_object_rec_detail(object_db_rec_t *obj_rec){
 
+    int n_fields = obj_rec->struct_rec->n_fields;
+    field_info_t *field = NULL;
+
+    int units = obj_rec->units; 
+    int obj_index = 0;
+    int field_index = 0;
+
+    for(; obj_index < units; obj_index++){
+        char *current_object_ptr = (char *)(obj_rec->ptr) + \
+                        (obj_index * obj_rec->struct_rec->ds_size);
+
+        for(field_index = 0; field_index < n_fields; field_index++){
+            
+            field = &obj_rec->struct_rec->fields[field_index];
+
+            switch(field->dtype){
+                case UINT8:
+                case INT32:
+                case UINT32:
+                    printf("%s[%d]->%s = %d\n", obj_rec->struct_rec->struct_name, obj_index, field->field_name, *(int *)(current_object_ptr + field->offset));
+                    break;
+                case CHAR:
+                    printf("%s[%d]->%s = %s\n", obj_rec->struct_rec->struct_name, obj_index, field->field_name, (char *)(current_object_ptr + field->offset));
+                    break;
+                case FLOAT:
+                    printf("%s[%d]->%s = %f\n", obj_rec->struct_rec->struct_name, obj_index, field->field_name, *(float *)(current_object_ptr + field->offset));
+                    break;
+                case DOUBLE:
+                    printf("%s[%d]->%s = %f\n", obj_rec->struct_rec->struct_name, obj_index, field->field_name, *(double *)(current_object_ptr + field->offset));
+                    break;
+                case OBJ_PTR:
+                    printf("%s[%d]->%s = %p\n", obj_rec->struct_rec->struct_name, obj_index, field->field_name,  (void *)*(int *)(current_object_ptr + field->offset));
+                    break;
+                case OBJ_STRUCT:
+                    /*Later*/
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
 }
 
+
+void report_leaked_objects(object_db_t *object_db){
+
+    int i = 0;
+    object_db_rec_t *head;
+
+    printf("Dumping Leaked Objects\n");
+
+    for(head = object_db->head; head; head = head->next){
+        if(!head->is_visited){
+            print_object_rec(head, i++);
+            gcol_dump_object_rec_detail(head);
+            printf("\n\n");
+        }
+    }
+}
+/* support for primitive data types */
 void  gcol_init_primitive_data_types_support(struct_db_t *struct_db)
 {
-    
+    REG_STRUCT(struct_db, int, 0);
+    REG_STRUCT(struct_db, char, 0);
+    REG_STRUCT(struct_db, float, 0);
+    REG_STRUCT(struct_db, double, 0);
 }
